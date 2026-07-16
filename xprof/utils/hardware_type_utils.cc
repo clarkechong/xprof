@@ -282,6 +282,13 @@ GpuFlopCapabilities GetGpuFlopCapabilitiesPerSM(
     flops_cap =
         GetNvidiaFlopCapsPerSMPerCycle(device_cap.compute_capability().major(),
                                        device_cap.compute_capability().minor());
+  } else if (device_cap.device_vendor() == tsl::profiler::kDeviceVendorAMD) {
+    // AMD peak flops is supplied directly by the ROCm collector via the
+    // peak_teraflops_per_second stat (see GetPerfEnvFromXPlane), so reaching
+    // here means an older trace without that stat. Expected fallback, not an
+    // error -- keep quiet at default verbosity.
+    VLOG(1) << "No per-SM flop table for AMD; relying on collector-supplied "
+               "peak_teraflops_per_second stat (absent in this trace).";
   } else {
     LOG(WARNING) << "Unsupported device vendor " << device_cap.device_vendor();
   }

@@ -128,9 +128,26 @@ PerfEnv MakePerfEnvForGpu(double peak_tera_flops_per_second,
 PerfEnv GetPerfEnvFromXPlane(const XPlane& device_plane) {
   DeviceCapabilities cap = GetDeviceCaps(device_plane);
   if (!absl::StartsWith(device_plane.name(), kTpuPlanePrefix)) {
-    double peak_tera_flops_per_second =
-        cap.num_cores() *
-        tsl::profiler::GigaToTera(GetFlopMaxThroughputPerSM(cap));
+    double peak_tera_flops_per_second = 0.0;
+    // AMD GPUs have no peak-flops table in xprof (GetFlopMaxThroughputPerSM only
+    // covers NVIDIA sm_XX). The ROCm collector instead precomputes the peak from
+    // the exact arch/CU count and writes the neutral peak_teraflops_per_second
+    // stat -- the same one TPU uses. Prefer that stat for AMD; every other vendor
+    // (NVIDIA, unknown) is untouched and keeps using the existing derivation.
+    if (cap.device_vendor() == tsl::profiler::kDeviceVendorAMD) {
+      XPlaneVisitor visitor =
+          tsl::profiler::CreateTfXPlaneVisitor(&device_plane);
+      std::optional<XStatVisitor> peak_stat =
+          visitor.GetStat(StatType::kDevCapPeakTeraflopsPerSecond);
+      if (peak_stat.has_value()) {
+        peak_tera_flops_per_second = peak_stat->DoubleValue();
+      }
+    }
+    if (peak_tera_flops_per_second <= 0.0) {
+      peak_tera_flops_per_second =
+          cap.num_cores() *
+          tsl::profiler::GigaToTera(GetFlopMaxThroughputPerSM(cap));
+    }
     double hbm_bw_giga_bytes_per_second =
         tsl::profiler::UniToGiga(cap.memory_bandwidth());
     double shm_giga_bytes_per_second =
