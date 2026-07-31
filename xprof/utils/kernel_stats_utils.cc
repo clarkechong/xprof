@@ -336,10 +336,13 @@ KernelStatsByOpName GroupKernelReportsByOpName(
     } else {
       // Not inserted. Aggregate kernel stats to op level.
       OpLevelKernelStats& stats = ret.first->second;
-      // Verifies operations with the same name have the same TensorCore
-      // eligibility.
-      DCHECK_EQ(stats.is_op_tensor_core_eligible,
-                kernel_report.is_op_tensor_core_eligible());
+      // An op is TensorCore-eligible if any of its kernels are: eligibility is
+      // computed per kernel (einsum equation, per-kernel TensorCore use) and
+      // OR-promoted upstream, so sibling kernels of one op can legitimately
+      // disagree.
+      stats.is_op_tensor_core_eligible =
+          stats.is_op_tensor_core_eligible ||
+          kernel_report.is_op_tensor_core_eligible();
       stats.total_duration_ns += kernel_report.total_duration_ns();
       if (kernel_report.is_kernel_using_tensor_core()) {
         stats.tensor_core_duration_ns += kernel_report.total_duration_ns();
