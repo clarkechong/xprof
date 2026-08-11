@@ -483,9 +483,11 @@ absl::StatusOr<OpStats> ConvertXSpaceToOpStats(const XSpace& space,
   // TODO(b/161942993) parallelize XPlane processing per thread.
   HloModuleMap hlo_module_map;
 
-  // Generate HloModuleMap if kernel stats or op metrics for TPU are requested.
-  bool generate_hlo_module_map = options.generate_kernel_stats_db ||
-                                 (is_tpu && options.generate_op_metrics_db);
+  // Generate HloModuleMap if kernel stats or op metrics are requested. Op
+  // metrics need it on every device type, not only TPU, because it supplies the
+  // per-op HLO breakdown that op_profile expands into child nodes.
+  bool generate_hlo_module_map =
+      options.generate_kernel_stats_db || options.generate_op_metrics_db;
   if (generate_hlo_module_map) {
     tensorflow::profiler::HloCostAnalysisWrapper::Factory create_cost_analysis;
     if (is_gpu) {
@@ -551,8 +553,8 @@ absl::StatusOr<OpStats> ConvertXSpaceToOpStats(const XSpace& space,
           } else {
             op_metrics_db = ConvertTensorCoreDeviceTraceXPlaneToOpMetricsDb(
                 *device_plane, sparse_core_metrics_map);
-            UpdateOpMetricsDbFromHloModuleMap(op_metrics_db, hlo_module_map);
           }
+          UpdateOpMetricsDbFromHloModuleMap(op_metrics_db, hlo_module_map);
         });
       }
     }
