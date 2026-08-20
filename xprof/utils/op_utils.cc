@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xprof/utils/op_utils.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 
@@ -179,6 +180,14 @@ void DeviceOpMetricsDbBuilder::EnterOp(const OpIdentifier& op_id,
   if (event_data.vdd_energy_j != 0.0) {
     op_metrics->set_vdd_energy_j(op_metrics->vdd_energy_j() +
                                  event_data.vdd_energy_j);
+  }
+  // Track the shortest occurrence, mirroring the TPU builder, so the Op stats
+  // "min time" column reports a real figure rather than 0 on the device path.
+  if (op_metrics->occurrences() == 0) {
+    op_metrics->set_min_time_ps(event_data.time_ps);
+  } else {
+    op_metrics->set_min_time_ps(
+        std::min<uint64_t>(op_metrics->min_time_ps(), event_data.time_ps));
   }
   op_metrics->set_num_cores(1);
   op_metrics->set_occurrences(op_metrics->occurrences() +

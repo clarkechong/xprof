@@ -104,18 +104,24 @@ uint64_t ParseNumBytesFromMemcpyDetail(absl::string_view memcpy_detail) {
   return 0ULL;
 }
 
+// Note tf32 is deliberately left in the 32-bit bucket: it takes 32-bit inputs
+// and only reduces the internal mantissa, so reporting it as 16-bit compute
+// would misdescribe the operands.
 EventType ClassifyGpuCompute(absl::string_view event_name,
                              absl::string_view tensor_shapes) {
   if (tensor_shapes.empty()) {
     // Deduces the precision from the name.
     return (absl::StrContains(event_name, "half") ||
-            absl::StrContains(event_name, "fp16"))
+            absl::StrContains(event_name, "fp16") ||
+            absl::StrContains(event_name, "bf16"))
                ? DEVICE_COMPUTE_16
                : DEVICE_COMPUTE_32;
   } else {
     // Deduces the precision from the shapes.
-    return (absl::StrContains(tensor_shapes, "half")) ? DEVICE_COMPUTE_16
-                                                      : DEVICE_COMPUTE_32;
+    return (absl::StrContains(tensor_shapes, "half") ||
+            absl::StrContains(tensor_shapes, "bf16"))
+               ? DEVICE_COMPUTE_16
+               : DEVICE_COMPUTE_32;
   }
 }
 

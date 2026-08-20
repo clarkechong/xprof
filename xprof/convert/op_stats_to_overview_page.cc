@@ -190,15 +190,6 @@ OverviewPageRecommendation ComputeGenericRecommendation(
 bool ComputeTpuAnalysisResult(const OpStats& op_stats,
                               OverviewPageAnalysis* analysis,
                               std::optional<TpuPerformanceLimits> limits) {
-  analysis->set_device_duty_cycle_percent(
-      tsl::profiler::SafeDivide(
-          op_stats.device_op_metrics_db().busy_time_ps(),
-          op_stats.device_op_metrics_db().busy_time_ps() +
-              op_stats.device_op_metrics_db().idle_time_ps()) *
-      100.0);
-  analysis->set_device_idle_time_percent(
-      IdleTimeRatio(op_stats.device_op_metrics_db()) * 100.0);
-
   analysis->set_host_idle_time_percent(
       IdleTimeRatio(op_stats.host_op_metrics_db()) * 100.0);
 
@@ -242,6 +233,17 @@ bool ComputeTpuAnalysisResult(const OpStats& op_stats,
 
 OverviewPageAnalysis ComputeAnalysisResult(const OpStats& op_stats) {
   OverviewPageAnalysis analysis;
+  // The device duty cycle is derived entirely from the device op metrics DB,
+  // which every device type populates, so it does not belong on the TPU-only
+  // path where it used to live.
+  analysis.set_device_duty_cycle_percent(
+      tsl::profiler::SafeDivide(
+          op_stats.device_op_metrics_db().busy_time_ps(),
+          op_stats.device_op_metrics_db().busy_time_ps() +
+              op_stats.device_op_metrics_db().idle_time_ps()) *
+      100.0);
+  analysis.set_device_idle_time_percent(
+      IdleTimeRatio(op_stats.device_op_metrics_db()) * 100.0);
   OpMetricsDb device_tf_op_metrics_db = CreateTfMetricsDbFromDeviceOpMetricsDb(
       op_stats.device_op_metrics_db(), /*with_idle=*/false);
   KernelStatsByOpName kernel_stats_by_op_name =

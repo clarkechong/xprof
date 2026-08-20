@@ -505,9 +505,11 @@ absl::StatusOr<OpStats> ConvertXSpaceToOpStats(const XSpace& space,
   // TODO(b/161942993) parallelize XPlane processing per thread.
   HloModuleMap hlo_module_map;
 
-  // Generate HloModuleMap if kernel stats or op metrics for TPU are requested.
-  bool generate_hlo_module_map = options.generate_kernel_stats_db ||
-                                 (is_tpu && options.generate_op_metrics_db);
+  // Generate HloModuleMap if kernel stats or op metrics are requested. Op
+  // metrics need it on every device type, not only TPU, because it supplies the
+  // per-op HLO breakdown that op_profile expands into child nodes.
+  bool generate_hlo_module_map =
+      options.generate_kernel_stats_db || options.generate_op_metrics_db;
   if (generate_hlo_module_map) {
     tensorflow::profiler::HloCostAnalysisWrapper::Factory create_cost_analysis;
     if (is_gpu) {
@@ -573,8 +575,8 @@ absl::StatusOr<OpStats> ConvertXSpaceToOpStats(const XSpace& space,
           } else {
             op_metrics_db = ConvertTensorCoreDeviceTraceXPlaneToOpMetricsDb(
                 *device_plane, sparse_core_metrics_map);
-            UpdateOpMetricsDbFromHloModuleMap(op_metrics_db, hlo_module_map);
           }
+          UpdateOpMetricsDbFromHloModuleMap(op_metrics_db, hlo_module_map);
         });
       }
     }
@@ -676,8 +678,11 @@ absl::StatusOr<OpStats> ConvertXSpaceToOpStats(const XSpace& space,
                   result.duty_cycle_tracker,
                   result.core_details->local_chip_id());
             } else {
-              LOG(WARNING) << "No CoreDetails found for TPU device plane: "
-                           << device_trace->name();
+              // Only TPU planes carry CoreDetails, so this is the normal path
+              // for a GPU rather than a problem. Combine at chip level, which
+              // is all the duty-cycle percentage needs.
+              VLOG(1) << "No CoreDetails for device plane: "
+                      << device_trace->name();
               duty_cycle_combiner.CombineChip(result.duty_cycle_tracker);
             }
           }
@@ -724,11 +729,14 @@ absl::StatusOr<OpStats> ConvertXSpaceToOpStats(const XSpace& space,
   }
 
   // Start combining data.
-  if (is_tpu) {
-    OpMetricsDb& op_metrics_db = *op_stats.mutable_device_op_metrics_db();
-    op_metrics_db.set_idle_time_ps(duty_cycle_combiner.GetTotalIdleTimePs());
-    op_metrics_db.set_busy_time_ps(duty_cycle_combiner.GetTotalActiveTimePs());
-  }
+  // A duty-cycle tracker is constructed and combined for every device plane,
+  // GPU included, so the idle/busy split is available on both device types;
+  // only this assignment was TPU-gated.
+  OpMetricsDb& device_op_metrics_db = *op_stats.mutable_device_op_metrics_db();
+  device_op_metrics_db.set_idle_time_ps(
+      duty_cycle_combiner.GetTotalIdleTimePs());
+  device_op_metrics_db.set_busy_time_ps(
+      duty_cycle_combiner.GetTotalActiveTimePs());
 
   // Combine into reports.
   if (options.generate_kernel_stats_db) {
